@@ -2,7 +2,7 @@ import os
 import json
 import csv
 from datetime import datetime
-import pandas as pd
+import time
 
 def load_technologies():
     """Load and display available technologies"""
@@ -53,53 +53,66 @@ def load_domain_list(filepath):
 
 def process_detailed_data(domains, tech_name, data_type):
     """Process the detailed CSV file and extract matching domains"""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_dir = os.path.join('data', 'extracted', tech_name)
     os.makedirs(output_dir, exist_ok=True)
     
-    output_file = os.path.join(output_dir, f'{data_type}.csv')
+    output_file = os.path.join(output_dir, f'{data_type}_{timestamp}.csv')
     detailed_file = 'data/detailed/domains-detailed.csv'
     
     print(f"\nProcessing detailed data for {tech_name}...")
+    start_time = time.time()
     
     # Convert domains to set for faster lookups
     domain_set = set(domains)
     found_domains = set()
     total_matches = 0
+    lines_processed = 0
     
     try:
-        # Open output file
-        with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
+        # Process input file and write matches immediately
+        with open(detailed_file, 'r', encoding='utf-8') as infile, \
+             open(output_file, 'w', newline='', encoding='utf-8') as outfile:
+            
+            reader = csv.reader(infile, delimiter=';')
             writer = csv.writer(outfile, delimiter=',')
             
-            # Process input file
-            with open(detailed_file, 'r', encoding='utf-8') as infile:
-                reader = csv.reader(infile, delimiter=';')
+            for row in reader:
+                lines_processed += 1
                 
-                # Write each matching row
-                for row in reader:
-                    if row[0].strip('"') in domain_set:
-                        # Remove quotes and write with comma delimiter
-                        cleaned_row = [field.strip('"') for field in row]
-                        writer.writerow(cleaned_row)
-                        found_domains.add(row[0].strip('"'))
-                        total_matches += 1
-                        
-                        # Progress update
-                        if total_matches % 100 == 0:
-                            print(f"Found {total_matches} matches...")
-                        
-                        # Stop if all domains are found
-                        if len(found_domains) == len(domain_set):
-                            print("All domains found! Stopping search...")
-                            break
+                if lines_processed % 1000000 == 0:  # Show progress every million lines
+                    elapsed_time = time.time() - start_time
+                    print(f"Processed {lines_processed:,} lines in {elapsed_time:.2f} seconds")
+                    print(f"Found {total_matches:,} matches so far...")
+                    print(f"Last saved match: {output_file}")
+                
+                if row[0].strip('"') in domain_set:
+                    # Remove quotes and write immediately to file
+                    cleaned_row = [field.strip('"') for field in row]
+                    writer.writerow(cleaned_row)
+                    outfile.flush()  # Force write to disk
+                    
+                    found_domains.add(row[0].strip('"'))
+                    total_matches += 1
+                    
+                    # Stop if all domains are found
+                    if len(found_domains) == len(domain_set):
+                        print("\nAll domains found! Stopping search...")
+                        break
     
     except Exception as e:
         print(f"Error processing file: {e}")
+        print(f"Progress saved up to {total_matches} matches in: {output_file}")
         return False
     
+    end_time = time.time()
+    total_time = end_time - start_time
+    
     print(f"\nProcessing complete!")
-    print(f"Total matches found: {total_matches}")
-    print(f"Extracted data saved to: {output_file}")
+    print(f"Total time: {total_time:.2f} seconds")
+    print(f"Lines processed: {lines_processed:,}")
+    print(f"Total matches found: {total_matches:,}")
+    print(f"Final file saved as: {output_file}")
     
     # Report any missing domains
     missing_domains = domain_set - found_domains
