@@ -53,74 +53,59 @@ def load_domain_list(filepath):
 
 def process_detailed_data(domains, tech_name, data_type):
     """Process the detailed CSV file and extract matching domains"""
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_dir = os.path.join('data', 'extracted', tech_name)
     os.makedirs(output_dir, exist_ok=True)
     
-    output_file = os.path.join(output_dir, f'{data_type}_{timestamp}.csv')
+    output_file = os.path.join(output_dir, f'{data_type}.csv')
     detailed_file = 'data/detailed/domains-detailed.csv'
     
     print(f"\nProcessing detailed data for {tech_name}...")
     
-    # Optimize chunk size for memory efficiency (adjust based on your RAM)
-    chunk_size = 50000  # Smaller chunk size
-    first_chunk = True
+    # Convert domains to set for faster lookups
+    domain_set = set(domains)
+    found_domains = set()
     total_matches = 0
     
     try:
-        # Convert domains to set for faster lookups
-        domain_set = set(domains)
-        
-        # Use iterator for memory efficient reading
-        csv_iterator = pd.read_csv(
-            detailed_file, 
-            sep=';', 
-            quotechar='"',
-            chunksize=chunk_size,
-            names=['domain', 'nameservers', 'ip', 'country', 
-                  'tech1', 'tech2', 'tech3', 'tech4', 'tech5'],
-            usecols=['domain', 'nameservers', 'ip', 'country'],  # Only load needed columns
-            dtype={
-                'domain': 'string',
-                'nameservers': 'string',
-                'ip': 'string',
-                'country': 'string'
-            }
-        )
-        
-        for i, chunk in enumerate(csv_iterator, 1):
-            # Filter rows where domain is in our target domains
-            matched_rows = chunk[chunk['domain'].isin(domain_set)]
+        # Open output file
+        with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
+            writer = csv.writer(outfile, delimiter=',')
             
-            if not matched_rows.empty:
-                # Write to CSV
-                matched_rows.to_csv(
-                    output_file, 
-                    mode='a' if not first_chunk else 'w',
-                    header=first_chunk,
-                    index=False,
-                    sep=';',
-                    quoting=csv.QUOTE_ALL
-                )
+            # Process input file
+            with open(detailed_file, 'r', encoding='utf-8') as infile:
+                reader = csv.reader(infile, delimiter=';')
                 
-                total_matches += len(matched_rows)
-                first_chunk = False
-                
-            # Progress update
-            if i % 20 == 0:  # Show progress every 20 chunks
-                print(f"Processed {i * chunk_size:,} rows, found {total_matches:,} matches...")
-                
-            # Clear memory
-            del chunk
-            del matched_rows
-            
+                # Write each matching row
+                for row in reader:
+                    if row[0].strip('"') in domain_set:
+                        # Remove quotes and write with comma delimiter
+                        cleaned_row = [field.strip('"') for field in row]
+                        writer.writerow(cleaned_row)
+                        found_domains.add(row[0].strip('"'))
+                        total_matches += 1
+                        
+                        # Progress update
+                        if total_matches % 100 == 0:
+                            print(f"Found {total_matches} matches...")
+                        
+                        # Stop if all domains are found
+                        if len(found_domains) == len(domain_set):
+                            print("All domains found! Stopping search...")
+                            break
+    
     except Exception as e:
         print(f"Error processing file: {e}")
         return False
-        
+    
     print(f"\nProcessing complete!")
-    print(f"Total matches found: {total_matches:,}")
+    print(f"Total matches found: {total_matches}")
     print(f"Extracted data saved to: {output_file}")
+    
+    # Report any missing domains
+    missing_domains = domain_set - found_domains
+    if missing_domains:
+        print(f"\nWarning: {len(missing_domains)} domains were not found in the detailed data")
+        
     return True
 
 def main():
